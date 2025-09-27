@@ -2,54 +2,43 @@
 import os
 import logging
 from PyPDF2 import PdfReader
-from utils import get_token_count
 
 
-def parse_pdf_node(state):
+def parse_pdf(state):
+    """Parse PDF and extract text content"""
     logging.info("Starting PDF parsing node...")
-
-    pdf_dir = state.get("pdf_dir", "data")
-
-    if not os.path.exists(pdf_dir):
-        logging.warning(f"PDF directory '{pdf_dir}' does not exist.")
+    
+    # Use fixed path for sample PDF
+    sample_pdf_path = "data/sample.pdf"  # Adjust path as needed
+    
+    if not os.path.exists(sample_pdf_path):
+        logging.error(f"Sample PDF not found at {sample_pdf_path}")
         return {
-            "messages": state.get("messages", []) + ["PDF directory does not exist."],
-            "pdf_text": "",
-            "token_count": 0,
+            "parsed_docs": "",
+            "messages": state.get("messages", []) + [f"System: Error - PDF not found at {sample_pdf_path}"]
         }
-
-    files = [f for f in os.listdir(pdf_dir) if f.endswith(".pdf")]
-
-    if not files:
-        logging.warning("No PDF found in directory.")
-        return {
-            "messages": state.get("messages", []) + ["No PDF found in directory."],
-            "pdf_text": "",
-            "token_count": 0,
-        }
-
-    pdf_path = os.path.join(pdf_dir, files[0])
-    logging.info(f"Reading PDF file: {pdf_path}")
-
+    
     try:
-        reader = PdfReader(pdf_path)
+        reader = PdfReader(sample_pdf_path)
         text = ""
         for i, page in enumerate(reader.pages):
             page_text = page.extract_text() or ""
-            text += page_text
+            text += page_text + "\n"
             logging.info(f"Parsed page {i+1} with {len(page_text)} characters")
-
-        token_count = get_token_count(text)
-        logging.info(
-            f"Finished parsing PDF: {files[0]} ({len(text)} chars, ~{token_count} tokens)"
-        )
-
-        return {"pdf_text": text, "token_count": token_count}
-
+        
+        logging.info(f"Successfully parsed PDF: {len(text)} characters total")
+        
+        messages = state.get("messages", [])
+        messages.append(f"System: {text}")
+        
+        return {
+            "parsed_docs": text,
+            "messages": messages
+        }
+    
     except Exception as e:
         logging.error(f"Error reading PDF: {e}")
         return {
-            "messages": state.get("messages", []) + [f"Error reading PDF: {e}"],
-            "pdf_text": "",
-            "token_count": 0,
+            "parsed_docs": "",
+            "messages": state.get("messages", []) + [f"System: Error reading PDF - {e}"]
         }

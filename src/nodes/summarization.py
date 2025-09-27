@@ -1,47 +1,84 @@
-# src/nodes/summarization.py
-import os
 import logging
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage
-from langchain_openai import ChatOpenAI
 
+def plan_summary(state):
+    """Planner-Executor: Plan the summarization strategy"""
+    logging.info("Starting summary planning...")
+    
+    parsed_docs = state.get("parsed_docs", "")
+    llm = state.get("llm")
+    
+    if not parsed_docs:
+        logging.warning("No parsed docs to plan for.")
+        return {"summary_plan": "No documents to summarize."}
+    
+    if not llm:
+        logging.error("No LLM instance available.")
+        return {"summary_plan": "Error: No LLM available for planning."}
+    
+    planner_prompt = f"""Human:
+    You are an award-winning editor specializing in summarizing technical documents for a broad audience. You are given a document enclosed in <document></document>. Your task is to create a strategy for summarizing this document. This strategy will serve as a set of instructions or prompts to guide other editors in producing the final summary.
 
-def summarize_node(state):
-    load_dotenv()
-    logging.info("Starting summarization node...")
+    Specifically, you should:
+    1. Provide a concise overview of the technical document.
+    2. Identify sections that may be complex, technical, or challenging for readers.
+    3. Suggest strategies or approaches for summarizing these difficult sections effectively.
 
-    pdf_text = state.get("pdf_text")
-    if not pdf_text:
-        logging.warning("No PDF text to summarize.")
-        return {"summary": "No text available to summarize."}
+    <document>{parsed_docs}</document>
 
-    logging.info(
-        f"Initializing LLM with provider '{state.get('provider', 'gemini')}'..."
-    )
-
+    Assistant:"""
+    
     try:
-        if state.get("provider") == "openai":
+        response = llm.invoke(planner_prompt)
+        response_text = response.content if hasattr(response, 'content') else str(response)
+        
+        messages = state.get("messages", [])
+        messages.append(f"Planner: {response_text}")
+        
+        logging.info(f"Generated summary plan: {len(response_text)} characters")
+        
+        return {
+            "summary_plan": response_text,
+            "messages": messages
+        }
+    
+    except Exception as e:
+        logging.error(f"Error during planning: {e}")
+        return {"summary_plan": f"Error during planning: {e}"}
 
-            llm = ChatOpenAI(
-                model=state.get("model", "gpt-4"), temperature=0.5, api_key=os.getenv("OPENAI_API_KEY")
-            )
-        else:
-            llm = ChatGoogleGenerativeAI(
-                model=state.get("model", "gemini-2.5-flash"),
-                temperature=0.5,
-                api_key=os.getenv("GOOGLE_API_KEY"),
-            )
+def summarize(state):
+    """Generate final summary based on the plan"""
+    logging.info("Starting summarization...")
+    
+    llm = state.get("llm")
+    parsed_docs = state.get("parsed_docs", "")
+    summary_plan = state.get("summary_plan", "")
+    
+    if not llm:
+        logging.error("No LLM instance available.")
+        return {"summary": "Error: No LLM available for summarization."}
+    
+    summarizer_prompt = f"""Human:
+    You are an award-winning editor specializing in summarizing technical documents for a broad audience. You are given a document enclosed in <document></document> and a summarization strategy enclosed in <strategy></strategy>. Your task is to create a summary of the document based on the provided strategy.
 
-        prompt = f"Summarize the following text in simple language:\n\n{pdf_text}"
-        logging.info(f"Sending text to LLM (length {len(pdf_text)} characters)...")
+    <document>{parsed_docs}</document>
+    <strategy>{summary_plan}</strategy>
 
-        response = llm.invoke([HumanMessage(content=prompt)])
-        summary = response.content if response else "No summary returned."
-
-        logging.info(f"Received summary (length {len(summary)} characters)")
-        return {"summary": summary}
-
+    Assistant:"""
+    
+    try:
+        response = llm.invoke(summarizer_prompt)
+        summary = response.content if hasattr(response, 'content') else str(response)
+        
+        messages = state.get("messages", [])
+        messages.append(f"Summarizer: {summary}")
+        
+        logging.info(f"Generated final summary: {len(summary)} characters")
+        
+        return {
+            "summary": summary,
+            "messages": messages
+        }
+    
     except Exception as e:
         logging.error(f"Error during summarization: {e}")
         return {"summary": f"Error during summarization: {e}"}

@@ -1,41 +1,53 @@
 from langgraph.graph import StateGraph, END
 from state import AgentState
-from nodes import get_model_provider, parse_pdf_node, summarize_node, finish_node
+from nodes import (
+    initialize_agent_state,
+    parse_pdf,
+    plan_summary,
+    summarize,
+    finish_node,
+)
+from utils import count_tokens
 
-def should_summarize(state):
-    """Conditional routing function"""
+
+def should_plan_summary(state):
+    """Conditional routing function - plan summary if token count > 3000"""
     token_count = state.get("token_count", 0)
-    if token_count > 1000:
-        return "summarize"
+    if token_count > 3000:
+        return "plan_summary"
     else:
-        return "finish"
+        return "end"
+
 
 def build_graph():
-    graph = StateGraph(AgentState)
+    workflow = StateGraph(AgentState)
 
-    # Add nodes
-    graph.add_node("map_model", get_model_provider)
-    graph.add_node("parse_pdf", parse_pdf_node)
-    graph.add_node("summarize", summarize_node)
-    graph.add_node("finish", finish_node)
+    # --- End entry point ---
+    workflow.set_entry_point("initialize")
 
-    # Entry point
-    graph.set_entry_point("map_model")
+    # --- Add nodes ---
+    workflow.add_node("initialize", initialize_agent_state)
+    workflow.add_node("parse_pdf", parse_pdf)
+    workflow.add_node("summarizer", summarize)
+    workflow.add_node("count_tokens", count_tokens)
+    workflow.add_node("plan_summary", plan_summary)
+    workflow.add_node("finish", finish_node)
 
-    # Define edges
-    graph.add_edge("map_model", "parse_pdf")
-    
-    # Conditional edge from parse_pdf
-    graph.add_conditional_edges(
-        "parse_pdf",
-        should_summarize,
+    # --- Add edges ---
+    workflow.add_edge("initialize", "parse_pdf")  # first initialize the agent state
+    workflow.add_edge("parse_pdf", "count_tokens")  # after parsing, count tokens
+
+    workflow.add_conditional_edges(
+        "count_tokens",
+        should_plan_summary,
         {
-            "summarize": "summarize",
-            "finish": "finish"
-        }
+            "plan_summary": "plan_summary",
+            "end": END,
+        },
     )
-    
-    graph.add_edge("summarize", "finish")
-    graph.add_edge("finish", END)
 
-    return graph.compile()
+    workflow.add_edge("plan_summary", "summarizer")  # after planning, summarize
+    workflow.add_edge("summarizer", END)
+    workflow.add_edge("finish", END)
+
+    return workflow.compile()
