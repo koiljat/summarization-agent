@@ -1,4 +1,11 @@
 import logging
+import sys
+import os
+
+# Add src to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from prompt_manager import prompt_manager
 
 def plan_summary(state):
     """Planner-Executor: Plan the summarization strategy"""
@@ -9,23 +16,25 @@ def plan_summary(state):
     
     if not parsed_docs:
         logging.warning("No parsed docs to plan for.")
-        return {"summary_plan": "No documents to summarize."}
+        try:
+            error_msg = prompt_manager.get_prompt("system", "error_messages", "no_document")
+        except (KeyError, ValueError):
+            error_msg = "No documents to summarize."
+        return {"summary_plan": error_msg}
     
     if not llm:
         logging.error("No LLM instance available.")
-        return {"summary_plan": "Error: No LLM available for planning."}
+        try:
+            error_msg = prompt_manager.get_prompt("system", "error_messages", "no_llm")
+        except (KeyError, ValueError):
+            error_msg = "Error: No LLM available for planning."
+        return {"summary_plan": error_msg}
     
-    planner_prompt = f"""Human:
-    You are an award-winning editor specializing in summarizing technical documents for a broad audience. You are given a document enclosed in <document></document>. Your task is to create a strategy for summarizing this document. This strategy will serve as a set of instructions or prompts to guide other editors in producing the final summary.
-
-    Specifically, you should:
-    1. Provide a concise overview of the technical document.
-    2. Identify sections that may be complex, technical, or challenging for readers.
-    3. Suggest strategies or approaches for summarizing these difficult sections effectively.
-
-    <document>{parsed_docs}</document>
-
-    Assistant:"""
+    # Get the planner prompt from YAML and format it
+    planner_prompt = prompt_manager.get_prompt(
+        'summarization', 'planner', 'template',
+        parsed_docs=parsed_docs
+    )
     
     try:
         response = llm.invoke(planner_prompt)
@@ -55,15 +64,18 @@ def summarize(state):
     
     if not llm:
         logging.error("No LLM instance available.")
-        return {"summary": "Error: No LLM available for summarization."}
+        try:
+            error_msg = prompt_manager.get_prompt("system", "error_messages", "no_llm")
+        except (KeyError, ValueError):
+            error_msg = "Error: No LLM available for summarization."
+        return {"summary": error_msg}
     
-    summarizer_prompt = f"""Human:
-    You are an award-winning editor specializing in summarizing technical documents for a broad audience. You are given a document enclosed in <document></document> and a summarization strategy enclosed in <strategy></strategy>. Your task is to create a summary of the document based on the provided strategy.
-
-    <document>{parsed_docs}</document>
-    <strategy>{summary_plan}</strategy>
-
-    Assistant:"""
+    # Get the summarizer prompt from YAML and format it
+    summarizer_prompt = prompt_manager.get_prompt(
+        'summarization', 'summarizer', 'template',
+        parsed_docs=parsed_docs,
+        summary_plan=summary_plan
+    )
     
     try:
         response = llm.invoke(summarizer_prompt)
